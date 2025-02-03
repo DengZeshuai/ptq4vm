@@ -9,7 +9,7 @@ from tqdm import tqdm
 import vim_GEMM
 
 # os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
 eps = 1e-8
 
