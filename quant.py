@@ -3,6 +3,7 @@
 import argparse
 import datetime
 import numpy as np
+import os
 import time
 import torch
 import torch.backends.cudnn as cudnn
@@ -43,6 +44,7 @@ def add_new_module(name, original_module, added_module):
 def get_args_parser():
     parser = argparse.ArgumentParser('PTQ4VM and evaluation script', add_help=False)
     parser.add_argument('--batch-size', default=64, type=int)
+    parser.add_argument('--batch-size-val', default=64, type=int)
     parser.add_argument('--epochs', default=100, type=int)
 
     # Model parameters
@@ -54,6 +56,7 @@ def get_args_parser():
                         help='Dropout rate (default: 0.)')
     parser.add_argument('--drop-path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
+    parser.add_argument('--save-ckpt', action='store_true', help='save checkpoint or not')
 
     # Augmentation parameters
     parser.add_argument('--color-jitter', type=float, default=0.3, metavar='PCT',
@@ -89,7 +92,7 @@ def get_args_parser():
                         choices=['kingdom', 'phylum', 'class', 'order', 'supercategory', 'family', 'genus', 'name'],
                         type=str, help='semantic granularity')
 
-    parser.add_argument('--output_dir', default='',
+    parser.add_argument('--output_dir', default='./output',
                         help='path where to save, empty for no saving')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
@@ -124,7 +127,7 @@ def get_args_parser():
     parser.add_argument("--alpha", type=float, default=0.5)
     parser.add_argument("--n-lvw", type=int, default=256)
     parser.add_argument("--n-lva", type=int, default=256)
-    parser.add_argument("--qmode", type=str, default='ptq4vm', choices=['ptq4vm'])
+    parser.add_argument("--qmode", type=str, default='ptq4vm', choices=['ptq4vm', ''])
     parser.add_argument('--train-batch', default=256, type=int)
     
     parser.add_argument('--lr-a', type=float, default=5e-4, metavar='LR',
@@ -186,7 +189,7 @@ def main(args):
 
     data_loader_val = torch.utils.data.DataLoader(
         dataset_val, sampler=sampler_val,
-        batch_size=args.batch_size,
+        batch_size=args.batch_size_val,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
         drop_last=False
@@ -252,7 +255,10 @@ def main(args):
 
     if args.resume:
         checkpoint = torch.load(args.resume, map_location='cpu')
-        msg = model_without_ddp.load_state_dict(checkpoint['model'], strict=False)
+        if args.qmode == "": 
+            msg = model_without_ddp.load_state_dict(checkpoint, strict=False)
+        else:
+            msg = model_without_ddp.load_state_dict(checkpoint['model'], strict=False)
         print(msg)
         
         if args.qmode == "ptq4vm":    
@@ -283,6 +289,11 @@ def main(args):
 
         test_stats = evaluate(data_loader_val, model, device, amp_autocast)
         print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+        if args.save_ckpt:
+            W_bit =  np.log2(args.n_lvw).astype(np.int8)
+            A_bit =  np.log2(args.n_lva).astype(np.int8)
+            save_path = os.path.join(args.output_dir, f'{args.model}_W{W_bit}A{A_bit}.pt')
+            torch.save(act_scales, save_path)
 
         return
     
